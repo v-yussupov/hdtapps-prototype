@@ -21,12 +21,12 @@ Python 3.6, MongoDB, Docker
 
 ## Project's structure
 
-app/ - application <br>
-<span style="padding-left: 4em;">  mod_repo/ - repository module</span> <br>
-<span style="padding-left: 4em;">  mod_tm/ - task manager module</span> <br>
-<span style="padding-left: 4em;">  mod_swagger_ui/ - <a href="https://github.com/swagger-api/swagger-ui">Swagger UI</a> to simplify working with prototype's API</span> <br>
-<span style="padding-left: 4em;"> static/ - static files</span> <br>
-<span style="padding-left: 4em;">  templates/ - Jinja2 templates </span><br>
-config.py - configuration settings <br>
-run.py - launcher<br>
+- app/ - application <br>
+--- mod_repo/ - repository module <br>
+--- mod_tm/ - task manager module <br>
+--- mod_swagger_ui/ - <a href="https://github.com/swagger-api/swagger-ui">Swagger UI</a> to simplify working with prototype's API <br>
+--- static/ - static files <br>
+--- templates/ - Jinja2 templates <br>
+- config.py - configuration settings <br>
+- run.py - launcher
 
