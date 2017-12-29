@@ -27,7 +27,7 @@ paths:
       produces:
       - "application/json"
       parameters:
-      - name: "tags"
+      - name: "tags[]"
         in: "query"
         description: "Tags to filter by"
         type: "array"
@@ -174,7 +174,7 @@ paths:
       - "Transformations"
       summary: "Retrieve the list of available transformations"
       description: "Multiple status values can be provided with comma separated strings"
-      operationId: "hdtapps.api.find_transfs"
+      operationId: "hdtapps.api.find_transformations"
       produces:
       - "application/json"
       parameters:

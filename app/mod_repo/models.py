@@ -1,5 +1,6 @@
 import json
 import traceback
+from itertools import starmap
 from typing import List
 
 
@@ -200,22 +201,72 @@ class Transformation:
         relaxed_signature += relaxed_param_signature
         strict_signature += "[pi:" + str(self.i_params_count) + "]"
 
+        ifile_formats = {}
         for f in self.i_files:
-            strict_signature += "[fi:" + f.format + "]"
+            if f.format not in ifile_formats:
+                ifile_formats[f.format] = {"strict": 0, "relaxed": 0}
+
+            ifile_formats[f.format]["strict"] += 1
             if not f.is_optional:
-                relaxed_signature += "[fi:" + f.format + "]"
+                ifile_formats[f.format]["relaxed"] += 1
+        for f in sorted(ifile_formats):
+            strict_signature += "[fi:" + str(ifile_formats[f]["strict"]) + ":" + f + "]"
+            relaxed_signature += "[fi:" + str(ifile_formats[f]["relaxed"]) + ":" + f + "]"
 
+        ifilesets_formats = {}
         for fs in self.i_filesets:
-            strict_signature += "[fsi:" + fs.format + "]"
-            if not fs.is_optional:
-                relaxed_signature += "[fsi:" + fs.format + "]"
+            if fs.format not in ifile_formats:
+                ifilesets_formats[fs.format] = {"strict": 0, "relaxed": 0}
 
-        for of in self.o_files:
-            relaxed_signature += "[fo:" + of.format + "]"
-            strict_signature += "[fo:" + of.format + "]"
+                ifilesets_formats[fs.format]["strict"] += 1
+            if not fs.is_optional:
+                ifilesets_formats[fs.format]["relaxed"] += 1
+        for fs in ifilesets_formats:
+            strict_signature += "[fsi:" + str(ifilesets_formats[fs]["strict"]) + ":" + fs + "]"
+            relaxed_signature += "[fsi:" + str(ifilesets_formats[fs]["relaxed"]) + ":" + fs + "]"
+
+        ofiles_formats = {}
+        for ofile in self.o_files:
+            if ofile.format not in ofiles_formats:
+                ofiles_formats[ofile.format] = 0
+
+                ofiles_formats[ofile.format] += 1
+        for o in ofiles_formats:
+            relaxed_signature += "[fo:" + str(ofiles_formats[o]) + ":" + o + "]"
+            strict_signature += "[fo:" + str(ofiles_formats[o]) + ":" + o + "]"
 
         self.strict_signature = strict_signature
         self.relaxed_signature = relaxed_signature
+
+    @staticmethod
+    def generate_signature(pnum: int, infiles: List[str], infilesets: List[str], outfiles: List[str]) -> str:
+        signature = "[pi:" + str(pnum) + "]"
+
+        infiles_dict = {}
+        for f in infiles:
+            if f not in infiles_dict:
+                infiles_dict[f] = 0
+            infiles_dict[f] += 1
+        for prop in infiles_dict:
+            signature += "[fi:" + str(infiles_dict[prop]) + ":" + prop + "]"
+
+        infilesets_dict = {}
+        for f in infilesets:
+            if f not in infilesets_dict:
+                infilesets_dict[f] = 0
+            infilesets_dict[f] += 1
+        for prop in infilesets_dict:
+            signature += "[fsi:" + str(infilesets_dict[prop]) + ":" + prop + "]"
+
+        outfiles_dict = {}
+        for f in outfiles:
+            if f not in outfiles_dict:
+                outfiles_dict[f] = 0
+            outfiles_dict[f] += 1
+        for prop in outfiles_dict:
+            signature += "[fo:" + str(outfiles_dict[prop]) + ":" + prop + "]"
+
+        return signature
 
     def to_json_str(self):
         return json.dumps(self, cls=ApplicationSpecJsonEncoder)

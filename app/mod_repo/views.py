@@ -1,10 +1,7 @@
 from flask import Blueprint, jsonify, request, abort
-from app.mod_repo import package_manager
-from app.mod_repo import file_handler
-from app.mod_repo import db_handler
-from bson.objectid import ObjectId
+from app.mod_repo import package_manager, file_handler, db_handler
+from app.mod_repo.models import Transformation
 from app.mod_tm import deployer
-from app.mod_repo.dockerfile_generator import Dockerfile
 import traceback
 
 mod_repo = Blueprint('repo', __name__)
@@ -13,9 +10,12 @@ mod_repo = Blueprint('repo', __name__)
 # Set the route and accepted methods
 @mod_repo.route('/apps')
 def find_apps():
-    if request_wants_json():
-        return jsonify({"text": "TODO: list apps!"})
-    return jsonify("TODO: list apps!"), 501
+    tags = request.args.getlist('tags[]')
+    apps = db_handler.find_apps_by_tags(tags)
+    for app in apps:
+        app["appInfo"].pop('path', None)
+
+    return jsonify(apps), 200
 
 
 @mod_repo.route('/apps', methods=['POST'])
@@ -67,27 +67,62 @@ def publish_app():
     return jsonify(pkg_spec.to_json_str())
 
 
-@mod_repo.route('/apps/<appID>')
-def get_app_by_id(appID):
-    doc = db_handler.find_app(appID)
+@mod_repo.route('/apps/<app_id>')
+def get_app_by_id(app_id):
+    doc = db_handler.find_app(app_id)
     doc["appInfo"].pop('path', None)
 
     return jsonify(doc)
 
 
-@mod_repo.route('/apps/<appID>', methods=['DELETE'])
-def delete_app(appID):
-    doc = db_handler.find_app(appID)
+@mod_repo.route('/apps/<app_id>', methods=['DELETE'])
+def delete_app(app_id):
+    doc = db_handler.find_app(app_id)
     path = doc["appInfo"]["path"]
     file_handler.remove_dir_tree(path)
-    db_handler.delete_app(appID)
+    db_handler.delete_app(app_id)
 
     return jsonify({"status": "OK"})
 
 
-@mod_repo.route('/transformations/<transformationID>')
-def get_transform_by_id(transformationID):
-    t = db_handler.find_transformation(transformationID)
+@mod_repo.route('/apps/<app_id>', methods=['PUT'])
+def update_app(app_id):
+
+    return jsonify({"TODO": "update the app"}), 501
+
+
+@mod_repo.route('/apps/<app_id>/transformations')
+def get_transfs_by_app_id(app_id):
+    doc = db_handler.find_app_transformations(app_id)
+
+    return jsonify(doc)
+
+
+@mod_repo.route('/transformations')
+def find_transformations():
+    qname = request.args.get('qname')
+    if qname:
+        t = db_handler.find_transformation_by_qname(qname)
+
+        return jsonify(t)
+
+    else:
+        pnum = int(request.args.get('pnum'))
+        infiles = request.args.getlist('infile[]')
+        infsets = request.args.getlist('infsets[]')
+        outfile = request.args.getlist('outfile[]')
+        strict = request.args.getlist('strict')
+        
+        signature = Transformation.generate_signature(pnum=pnum, infiles=infiles, infilesets=infsets, outfiles=outfile)
+
+        t_list = db_handler.find_transformation_by_signature(signature, strict)
+
+        return jsonify(t_list)
+
+
+@mod_repo.route('/transformations/<t_id>')
+def get_transform_by_id(t_id):
+    t = db_handler.find_transformation_by_id(t_id)
 
     return jsonify(t)
 

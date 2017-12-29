@@ -13,7 +13,7 @@ def deploy():
     req_body = request.json
 
     app = db_handler.find_app(req_body["appID"])
-    t = db_handler.find_transformation(req_body["transformationID"])
+    t = db_handler.find_transformation_by_id(req_body["transformationID"])
 
     task_id = task_processor.generate_task_id(app["appInfo"]["appName"])
     task_path = task_processor.generate_task_folder(task_id)

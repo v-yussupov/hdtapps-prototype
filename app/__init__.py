@@ -1,12 +1,19 @@
 # Import flask and template operators
-from flask import Flask, render_template
+from flask import Flask, render_template, redirect, request
 from config import config
 from celery import Celery
 
 def create_app(config_name):
     app = Flask(__name__)
+    app.url_map.strict_slashes = False
     app.config.from_object(config[config_name])
     # config[config_name].init_app(app)
+
+    @app.before_request
+    def clear_trailing():
+        rp = request.path
+        if rp != '/' and rp.endswith('/'):
+            return redirect(rp[:-1])
 
     # attach routes and custom error pages here
 
@@ -21,6 +28,8 @@ def create_app(config_name):
     @app.errorhandler(500)
     def internal_server_error(e):
         return render_template('error_templates/500.html'), 500
+
+
 
     # repository blueprint
     from app.mod_repo.views import mod_repo as repository_module
