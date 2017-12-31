@@ -10,6 +10,10 @@ class Config:
     TRANSF_COLL_NAME = 'transformations'
     DOCKER_IMAGES_TAG_PREFIX = 'hdtapps/'
 
+    CELERY_BROKER_URL = 'redis://localhost:6379/0'
+    CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+    CELERY_TRACK_STARTED = True
+
 
     @staticmethod
     def init_app(app):

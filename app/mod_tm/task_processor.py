@@ -1,178 +1,10 @@
 from config import BASE_DIR
-import docker
-import uuid
-import os
-import requests
-import mimetypes
+import docker, os, uuid, requests, mimetypes, tarfile, time
 from pyunpack import Archive
 from io import BytesIO
-import tarfile
-import time
-
-
-def map_input_params(req_body, transformation):
-
-    if "inputParams" in req_body:
-        req_params = req_body["inputParams"]
-        t_params = transformation["inputParams"]
-
-        num_params = []
-        str_params = []
-        for p in req_params:
-            if p["paramType"] == "int" or p["paramType"] == "integer":
-                num_params.append(p)
-            else:
-                str_params.append(p)
-
-        params_map = {}
-        for param in t_params:
-            if param["type"] == "string" or param["type"] == "str":
-                params_map[param["alias"]] = str_params.pop()
-            else:
-                params_map[param["alias"]] = num_params.pop()
-
-        return params_map
-
-    return None
-
-
-def map_input_files(req_files, t_files):
-    req_files_dict = {}
-    for f in req_files:
-        if f["format"] not in req_files_dict:
-            req_files_dict[f["format"]] = []
-        req_files_dict[f["format"]].append(f["link"])
-    files_map = {}
-    for file in t_files:
-        files_map[file["alias"]] = file
-        files_map[file["alias"]]["link"] = req_files_dict[file["format"]].pop()
-
-    return files_map
-
-
-def map_input_filesets(req_file_sets, t_file_sets):
-    req_file_sets_dict = {}
-    for fs in req_file_sets:
-        if fs["format"] not in req_file_sets_dict:
-            req_file_sets_dict[fs["format"]] = []
-        req_file_sets_dict[fs["format"]].append(fs["linkToArchive"])
-    filesets_map = {}
-    for fileset in t_file_sets:
-        link = req_file_sets_dict[fileset["format"]].pop()
-        filesets_map[fileset["alias"]] = fileset
-        filesets_map[fileset["alias"]]["linkToArchive"] = link
-
-    return filesets_map
-
-
-def prepare_input_files(task_id, req_body, transformation):
-
-    if "inputFiles" in req_body:
-        m = map_input_files(req_body["inputFiles"], transformation["inputFiles"])
-        for a in m:
-            f = m[a]
-
-        return m
-
-    return None
-
-
-def prepare_input_filesets(task_files_path, req_body, transformation):
-
-    if "inputFileSets" in req_body:
-        m = map_input_filesets(req_body["inputFileSets"], transformation["inputFileSets"])
-        for a in m:
-            fs = m[a]
-            response = requests.get(fs["linkToArchive"], stream=True)
-            content_type = response.headers['content-type']
-            extension = mimetypes.guess_extension(content_type)
-            temp_file = "archive" + extension
-            temp_dir = os.path.join(task_files_path, a.replace("$", ""))
-            if not os.path.exists(temp_dir):
-                os.makedirs(temp_dir)
-            temp_path = os.path.join(temp_dir, temp_file)
-
-            with open(temp_path, 'wb') as f:
-                for chunk in response:
-                    f.write(chunk)
-
-            Archive(temp_path).extractall(temp_dir)
-            os.remove(temp_path)
-            fs["linkToArchive"] = temp_dir
-        return m
-
-    return None
-
-
-def build_inv_cmd(app, transformation, p_map, f_map, fs_map):
-    result = []
-    invocation = choose_invocation(app["invocations"])
-    aliases = {}
-    for word in invocation["command"].split():
-        if word.startswith('$'):
-            aliases[word] = True
-
-    if "inputParams" in transformation:
-        for p in transformation["inputParams"]:
-            if p["alias"] in aliases:
-                invocation["command"] = invocation["command"].replace(p["alias"], p_map[p["alias"]]["value"])
-                aliases.pop(p["alias"], None)
-
-    if "inputFiles" in transformation:
-        for f in transformation["inputFiles"]:
-            if f["alias"] in aliases:
-                aliases.pop(f["alias"], None)
-                # process input files
-                pass
-
-    if "inputFileSets" in transformation:
-        for f in transformation["inputFileSets"]:
-            if f["alias"] in aliases:
-                aliases.pop(f["alias"], None)
-                # process input filesets
-                pass
-
-    if not bool(aliases):
-        # exception: not all aliases in the command were mapped
-        pass
-
-    return invocation["command"]
-
-
-def choose_invocation(invocations_list):
-    return invocations_list[0]
-
-
-def choose_provider(providers_list):
-    return providers_list[0]
-
-
-def generate_task_id(app_name):
-    app_str = app_name[0] + app_name[-1]
-    return app_str + "_" + uuid.uuid4().hex
-
-
-def get_root_repo_folder():
-    root_repo_path = os.path.join(BASE_DIR, "data", "tasks")
-    create_folder_if_not_exists(root_repo_path)
-
-    return root_repo_path
-
-
-def create_folder_if_not_exists(path):
-    try:
-        if not os.path.exists(path):
-            os.makedirs(path)
-    except Exception as e:
-        print(e)
-        pass
-
-
-def generate_task_folder(task_id):
-    path = os.path.join(get_root_repo_folder(), task_id)
-    create_folder_if_not_exists(path)
-
-    return path
+import celery
+from app.mod_repo import db_handler
+from app.mod_tm.models import TransformationTask
 
 
 def get_docker_client():
@@ -277,3 +109,60 @@ def post_output_to_consumer(task_path, filename, endpoint):
     res = requests.post(url=endpoint,
                         data=data,
                         headers={'Content-Type': 'application/octet-stream'})
+
+
+@celery.task(bind=True)
+def run_transformation_task(self, request_body):
+
+    task_obj = TransformationTask(request_body, self.request.id)
+    app_image = get_docker_image(task_obj.provider["pkgID"])
+    app_container = create_docker_container(app_image, task_obj.invocation_cmd)
+
+    self.update_state(state="PROGRESS", meta=populate_meta_info(app_container.id))
+
+    if task_obj.input_files_map is not None:
+        # copy input files to container
+        pass
+
+    if task_obj.input_filesets_map is not None:
+        # copy input filesets to container
+        for a in task_obj.input_filesets_map:
+            fs = task_obj.input_filesets_map[a]
+            req_input_path = get_required_path(fs["requiredPath"])
+            copy_dir_to_container(app_container, fs["linkToArchive"], req_input_path)
+
+    start_container(app_container)
+
+    self.update_state(state="PROGRESS", meta=populate_meta_info(app_container.id))
+    if wait_for_container_finish(app_container) == 0:
+        for o in task_obj.transform["outputFiles"]:
+            output_dir = get_required_path(o["accessPath"])
+            filename = o["outputName"] + "." + o["format"]
+            output_path = output_dir + filename
+            copy_output_from_container(app_container, output_path, task_obj.task_folder_path)
+
+            # task_processor.post_output_to_consumer(task_path, filename, req_body["resultsEndpoint"])
+
+
+        remove_container(app_container)
+        self.update_state(state="SUCCESS", meta=populate_meta_info(None))
+    else:
+        self.update_state(state="FAILURE", meta=populate_meta_info(app_container.id))
+
+
+        # TODO: clean up and make proper status updates
+
+
+def populate_meta_info(container_id):
+    if not container_id is None:
+        c = get_docker_container(container_id)
+
+        return {
+            "container_id": c.id,
+            "container_status": c.status
+        }
+    else:
+        return {
+            "container_id": "",
+            "container_status": "REMOVED"
+        }

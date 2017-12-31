@@ -1,13 +1,17 @@
-# Import flask and template operators
 from flask import Flask, render_template, redirect, request
-from config import config
+from config import config, Config
 from celery import Celery
+
+celery = Celery(__name__, broker=Config.CELERY_BROKER_URL)
+
 
 def create_app(config_name):
     app = Flask(__name__)
     app.url_map.strict_slashes = False
     app.config.from_object(config[config_name])
     # config[config_name].init_app(app)
+
+    celery.conf.update(app.config)
 
     @app.before_request
     def clear_trailing():
